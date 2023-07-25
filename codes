@@ -1,0 +1,13 @@
+signaling codes:
+    format: <u8 opcode><u8 from><u8 to><data>
+
+    new connection: <0><u8 id>
+    announce:       <1><u8 sender_id><u8 to_id><u8 sender_ip_len><str sender_ip><str sender_username>
+    acknowledge:    <2><u8 sender_id><u8 to_id><u8 sender_ip_len><str sender_ip>str sender_username>
+    bitrate change: <3><u8 sender_id><u8 to_id><u32 new bitrate>
+
+
+app codes¿ñ¿: 
+    0: new server created
+    1: signaling server is running
+    2: signaling client is running

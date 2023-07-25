@@ -9,22 +9,14 @@ edition = "2021"
 flume = "0.10.14"
 crossbeam = "0.8"
 bytes = "1.4.0"
+
 # for crypto
 aes-gcm-siv = "0.11.1"
 aead = "0.5.2"
 base64 = "0.21.2"
 
 # for networking
-tungstenite = "0.19.0"
-
-tokio-tungstenite = "0.19.0"
-tokio = {version="*", features=["full"]}
-
-#futures-channel = "0.3.28"
-#futures-util = "0.3.28"
-
 stunclient = "0.4.0"
-
 urlencoding = "2.1.2"
 url = "2.3.1"
 

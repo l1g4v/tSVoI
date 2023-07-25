@@ -1,14 +1,17 @@
 // SPDX-FileCopyrightText: Copyright 2023 tSVoI
 // SPDX-License-Identifier: GPL-3.0-only
 
+use bincode::de;
+use bytes::{BufMut, Bytes, BytesMut};
 use log::{debug, error, info, warn};
 use serde::de::Error;
 
 use crate::aes::AES;
-use crate::audio::Audio;
-use crate::audio::playback::AudioPlayback;
+use crate::audio::playback::{self, AudioPlayback};
+use crate::audio::{self, Audio};
 use crate::audio_peer::AudioPeer;
-use crate::{signaling};
+use crate::signaling;
+
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::TcpListener;
@@ -21,14 +24,14 @@ pub struct SignalingServer {
     listener: TcpListener,
     cipher: Arc<AES>,
     streams: Arc<Mutex<HashMap<u8, TcpStream>>>,
-    audio_peers: Arc<Mutex<HashMap<u8, (String, String, AudioPeer)>>>,
+    audio_peers: Arc<Mutex<HashMap<u8, (Bytes, AudioPeer)>>>,
 }
 impl SignalingServer {
     pub fn new(username: String) -> Self {
         let bind = signaling::get_address_ipv6();
         let listener = TcpListener::bind(bind).unwrap();
 
-        let cipher = Arc::new(AES::new(None));
+        let cipher = Arc::new(AES::new(None).unwrap());
         SignalingServer {
             username,
             listener,
@@ -43,158 +46,150 @@ impl SignalingServer {
     pub fn get_cipher_key(&self) -> String {
         self.cipher.get_key().clone()
     }
-    pub fn run(&self, backend:String ,playback_name: String) {
+    pub fn run(&self, playback_name: String) {
         let listener_tryclone = self.listener.try_clone();
         if listener_tryclone.is_err() {
             panic!("Failed to clone listener");
         }
-        //let listener_clone = listener_tryclone.unwrap();
-        //let cipher_mainclone = self.cipher.clone();
-        //let peers_mainclone = self.streams.clone();
-        thread::scope(|scope| {
-            info!("Listening for connections");
-            let bkc = backend.clone();
+        let listener = listener_tryclone.unwrap();
+        let audio_peers = self.audio_peers.clone();
+        let streams = self.streams.clone();
+        let aes = self.cipher.clone();
+        let my_username = self.username.clone();
+        thread::spawn(move || {
+            let audio_peers = audio_peers.clone();
+            let streams = streams.clone();
+            let my_username = my_username.clone();
+            println!("{{ \"notification_code\": 1 }}");
             loop {
-                let bck = bkc.clone();
-                let (mut stream, _) = self.listener.accept().unwrap();
-                let mut stream_clone = stream.try_clone().unwrap();
-                info!("New connection");
+                let audio_peers = audio_peers.clone();
+                let streams = streams.clone();
+                let my_username = my_username.clone();
 
-                let peers = self.streams.clone();
+                let try_accept = listener.accept();
+                if try_accept.is_err() {
+                    error!("{:?}", try_accept.err());
+                    continue;
+                }
+                let (mut stream, addr) = try_accept.unwrap();
+                debug!("New connection from {}", addr);
 
-                let id = peers.lock().unwrap().len() as u8 + 1;
-                let welcome_msg = format!("id¬{}", id);
-                let encrypted_welcome = self.cipher.encrypt(welcome_msg);
-
-                //The id also lets the client know how many adress candidates has to create
-                stream.write_all(encrypted_welcome.as_bytes()).unwrap();
-
-                self.streams
+                let id = 1 + audio_peers.lock().unwrap().len() as u8;
+                let welcome_prim = vec![0, id];
+                let welcome_msg = Bytes::from(welcome_prim);
+                let encrypted_msg = aes.encrypt(welcome_msg).unwrap();
+                stream.write_all(&encrypted_msg);
+                streams
                     .lock()
                     .unwrap()
                     .insert(id, stream.try_clone().unwrap());
-                let peers = self.streams.clone();
-                let playback_clone = playback_name.clone();
-                scope.spawn(move || {
-                    let audio_peers = self.audio_peers.clone();
-                    let bkk = bck.clone();
+
+                let aes_clone = aes.clone();
+
+                let playback_name = playback_name.clone();
+                thread::spawn(move || {
+                    let recv_buffer = &mut [0u8; 1024];
+                    let playback_name = playback_name.clone();
+
                     loop {
-                        let backend = bkk.clone();
-                        let buf = &mut [0; 2048];
-                        let size = stream_clone.read(buf).unwrap();
-                        if size == 0 {
-                            info!("Connection closed");
-                            peers.lock().unwrap().remove(&id);
-                            break;
-                        }
-                        let encrypted = String::from_utf8_lossy(&buf[0..size]).to_string();
-                        debug!("Encrypted: {}", encrypted);
-                        let decrypted = self.cipher.decrypt(encrypted);
-                        debug!("Decrypted: {}", decrypted);
-                        //<target_id>¬<from_id>¬<event>¬<args>
-                        let split: Vec<&str> = decrypted.split("¬").collect();
-                        let target_id = split[0].parse::<u8>().unwrap();
-                        if target_id == 0 {
-                            let event = split[2];
-                            match event {
-                                "ann" => {
-                                    let peer_id = split[1].parse::<u8>().unwrap();
-                                    let peer_username = split[3].to_string();
-                                    let peer_address_candidate = split[4].to_string();
-            
-                                    let adress_candidate = signaling::get_address_ipv6();
-                                    let username = self.username.clone();
-            
-                                    let mut peers = audio_peers.lock().unwrap();
-                                    let audio_peer = AudioPeer::new(adress_candidate.clone());
-                                    let item = (peer_username, peer_address_candidate, audio_peer);
-                                    peers.insert(peer_id, item);
-            
-                                    let ack = format!(
-                                        "{}¬{}¬ack¬{}¬{}",
-                                        peer_id, 0, username, adress_candidate
+                        let audio_peers = audio_peers.clone();
+                        let playback_name = playback_name.clone();
+                        match stream.read(recv_buffer.as_mut()) {
+                            Ok(recv_len) => {
+                                if recv_len == 0 {
+                                    error!("Connection closed");
+                                    return;
+                                }
+                                let try_decrypt =
+                                    aes_clone.decrypt_vec(recv_buffer[..recv_len].to_vec());
+                                if try_decrypt.is_err() {
+                                    error!(
+                                        "Failed to decrypt message: {}",
+                                        try_decrypt.err().unwrap()
                                     );
-                                    let encrypted = self.cipher.encrypt(ack);
-                                    debug!("Sending encrypted {}", encrypted);
-                                    stream.write(encrypted.as_bytes()).unwrap();
+                                    continue;
                                 }
-                                "ack" => {
-                                    let peer_id = split[1].parse::<u8>().unwrap();
-                                    let username = split[3];
-                                    let address_candidate = split[4];
-            
-                                    let mut peers = audio_peers.lock().unwrap();
-                                    peers.get_mut(&peer_id).unwrap().0 = username.to_string();
-                                    peers.get_mut(&peer_id).unwrap().1 = address_candidate.to_string();
-            
-                                    let ok = format!("{}¬{}¬ok", peer_id, 0);
-                                    let encrypted = self.cipher.encrypt(ok);
-                                    debug!("Sending encrypted {}", encrypted);
-                                    stream.write(encrypted.as_bytes()).unwrap();
-                                }
-                                "ok" => {
-                                    let peer_id = split[1].parse::<u8>().unwrap();
-            
-                                    let ok = format!("{}¬{}¬ko", peer_id, 0);
-                                    let encrypted = self.cipher.encrypt(ok);
-                                    debug!("Sending encrypted {}", encrypted);
-                                    stream.write(encrypted.as_bytes()).unwrap();
-            
-                                    let audio_peers_clone = audio_peers.clone();
-                                    let playback_clone = playback_clone.clone();
-                                    scope.spawn(move ||{
-                                        let peers = audio_peers_clone.lock().unwrap();
-                                        let item = peers.get(&peer_id);
-                                        let (_, address, peer) = item.unwrap();
-            
-                                        let playback_id = Audio::get_device_id(backend.clone(), &playback_clone, crate::audio::DeviceKind::Playback).unwrap();
-                                        let playback_config = AudioPlayback::create_config(playback_id, 2, 48_000);
-                                        peer.connect(address.clone(), backend.clone() ,playback_config);
-                                        loop{
-                                            thread::sleep(std::time::Duration::from_millis(1));
+
+                                let decrypted = try_decrypt.unwrap();
+                                debug!("Received message: {:?}", decrypted);
+                                //let mut payload = Vec::new();
+                                //decrypted[2..].clone_into(&mut payload);
+                                let to_id = decrypted[2];
+                                if to_id == 0 {
+                                    let opcode = decrypted[0];
+                                    let from_id = decrypted[1];
+
+                                    match opcode {
+                                        1 => {
+                                            let payload = decrypted[3..].to_vec();
+                                            let ip_len = 1 + payload[0] as usize;
+                                            let ip_candidate =
+                                                String::from_utf8(payload[1..ip_len].to_vec())
+                                                    .unwrap();
+                                            debug!("Received ip candidate: {}", ip_candidate);
+                                            let username = Bytes::from(payload[ip_len..].to_vec());
+                                            let my_addr_candidate = signaling::get_address_ipv6();
+                                            let audio_peer = AudioPeer::new(
+                                                my_addr_candidate.clone(),
+                                                aes_clone.get_key(),
+                                            );
+                                            audio_peers
+                                                .lock()
+                                                .unwrap()
+                                                .insert(from_id, (username, audio_peer));
+
+                                            thread::spawn(move || {
+                                                let unlocked_peers = audio_peers.lock().unwrap();
+                                                let (usr, audio_peer) =
+                                                    unlocked_peers.get(&from_id).unwrap();
+                                                audio_peer
+                                                    .connect(ip_candidate, playback_name.clone());
+                                                info!("Connected to peer \"{}\"", String::from_utf8(usr.to_vec()).unwrap());
+                                                drop(unlocked_peers);
+                                                loop {
+                                                    thread::sleep(
+                                                        std::time::Duration::from_millis(100),
+                                                    );
+                                                }
+                                            });
+
+                                            let mut reply = BytesMut::with_capacity(1024);
+                                            reply.put_u8(2);
+                                            reply.put_u8(0);
+                                            reply.put_u8(from_id);
+                                            reply.put_u8(my_addr_candidate.len() as u8);
+                                            reply.put(my_addr_candidate.as_bytes());
+                                            reply.put(my_username.as_bytes());
+
+                                            let encrypted = aes_clone.encrypt(reply.freeze()).unwrap();
+                                            stream.write_all(&encrypted);
                                         }
-                                        
-                                    }); 
-                                }
-                                "ko" => {
-                                    let peer_id = split[1].parse::<u8>().unwrap();
-            
-                                    let audio_peers_clone = audio_peers.clone();
-                                    let playback_clone = playback_clone.clone();
-                                    scope.spawn(move ||{
-                                        let peers = audio_peers_clone.lock().unwrap();
-                                        let item = peers.get(&peer_id);
-                                        let (_, address, peer) = item.unwrap();
-            
-                                        let playback_id = Audio::get_device_id(backend.clone(), &playback_clone, crate::audio::DeviceKind::Playback).unwrap();
-                                        let playback_config = AudioPlayback::create_config(playback_id, 2, 48_000);
-                                        peer.connect(address.clone(), backend.clone(), playback_config);
-                                        loop{
-                                            thread::sleep(std::time::Duration::from_millis(1));
+                                        2 => {
+                                            error!("Received unexpected opcode 2");
+                                            continue;
                                         }
-                                        
-                                    }); 
-                                }
-                                _ => {
-                                    error!("Unknown event {}", event);
+                                        3 => {
+                                            todo!("Change bitrate or let AudioPeer handle it");
+                                        }
+                                        _ => {
+                                            error!("Unknown opcode {}", opcode);
+                                            continue;
+                                        }
+                                    }
+                                } else {
+                                    let mut streams = streams.lock().unwrap();
+                                    let stream = streams.get_mut(&to_id);
+                                    if stream.is_none() {
+                                        error!("Stream {} not found", to_id);
+                                        continue;
+                                    }
+                                    let stream = stream.unwrap();
+                                    stream.write_all(&recv_buffer[..recv_len]);
                                 }
                             }
-                        } else {
-                            let mut list = peers.lock().unwrap();
-                            let try_stream = list.get(&target_id);
-                            if try_stream.is_none() {
-                                debug!("Peer not found");
-                                continue;
-                            }
-                            let mut target = try_stream.unwrap();
-                            //let mut target = stream.try_clone().unwrap();
-                            let try_send = target.write(&buf[0..size]);
-                            if try_send.is_err() {
-                                error!(
-                                    "Failed to send message to peer, connection is probably closed"
-                                );
-                                list.remove(&target_id);
-                                break;
+                            Err(e) => {
+                                error!("Failed to read from stream: {}", e);
+                                return;
                             }
                         }
                     }
@@ -202,28 +197,29 @@ impl SignalingServer {
             }
         });
     }
-    pub fn send_opus(&self, opus_packet: Vec<u8>) {
+    pub fn send_opus(&self, opus_packet: Bytes) {
         let peers = self.audio_peers.lock().unwrap();
-        for (_, _, peer) in peers.values() {
+        for (_, peer) in peers.values() {
             peer.send(opus_packet.clone());
         }
     }
     pub fn get_peers(&self) -> Vec<(u8, String)> {
         let peers = self.audio_peers.lock().unwrap();
-        let mut result: Vec<(u8,String)> = Vec::new();
-        peers.iter().for_each(|(id, (username, _, _))| {
-            result.push((*id, username.clone()));
+        let mut result: Vec<(u8, String)> = Vec::new();
+        peers.iter().for_each(|(id, (username, _))| {
+            let username = String::from_utf8(username.to_vec()).unwrap();
+            result.push((*id, username));
         });
         result
     }
-    pub fn change_peer_volume(&self, peer_id: u8, volume: u8){
+    pub fn change_peer_volume(&self, peer_id: u8, volume: u8) {
         let peers = self.audio_peers.lock().unwrap();
         let peer = peers.get(&peer_id);
-        if peer.is_none(){
+        if peer.is_none() {
             error!("Peer {} not found", peer_id);
             return;
         }
-        let (_, _, peer) = peer.unwrap();
+        let (_, peer) = peer.unwrap();
         peer.change_volume(volume);
     }
 }

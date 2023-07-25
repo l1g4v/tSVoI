@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: Copyright 2023 tSVoI
-// SPDX-License-Identifier: GPL-3.0-only 
+// SPDX-License-Identifier: GPL-3.0-only
 
 pub mod client;
 pub mod server;

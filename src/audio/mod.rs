@@ -1,13 +1,13 @@
 // SPDX-FileCopyrightText: Copyright 2023 tSVoI
-// SPDX-License-Identifier: GPL-3.0-only 
+// SPDX-License-Identifier: GPL-3.0-only
 
-use miniaudio::{Context, DeviceId, DeviceIdAndName, Backend};
+use miniaudio::{Backend, Context, DeviceId, DeviceIdAndName};
 
 pub mod capture;
 pub mod playback;
 
 #[derive(PartialEq)]
-pub enum DeviceKind{
+pub enum DeviceKind {
     Capture,
     Playback,
 }
@@ -32,7 +32,7 @@ impl Audio {
     pub fn get_output_devices() -> Vec<(String, DeviceId)> {
         let context = Context::new(&[], None).unwrap();
         let mut outputs: Vec<(String, DeviceId)> = Vec::new();
-        
+
         context
             .with_devices(|playback_devices, _| {
                 for (_, device) in playback_devices.iter().enumerate() {
@@ -62,32 +62,30 @@ impl Audio {
             .expect("failed to get devices");
     }
 
-    pub fn get_device_id(name: &String, kind: DeviceKind) -> Option<DeviceId>{
+    pub fn get_device_id(name: &String, kind: DeviceKind) -> Option<DeviceId> {
         let context = Context::new(&[], None).unwrap();
         let mut device_id = None;
         context
             .with_devices(|playback_devices, capture_devices| {
-                if kind == DeviceKind::Capture{
+                if kind == DeviceKind::Capture {
                     for device in capture_devices.iter() {
                         if device.name() == name {
                             device_id = Some(device.id().clone());
                         }
                     }
-                }
-                else{
+                } else {
                     for device in playback_devices.iter() {
                         if device.name() == name {
                             device_id = Some(device.id().clone());
                         }
                     }
                 }
-                
             })
             .expect("failed to get devices");
         device_id
     }
-    pub fn backend_from_text(backend: String) -> Backend{
-        match backend.as_str(){
+    pub fn backend_from_text(backend: String) -> Backend {
+        match backend.as_str() {
             "PulseAudio" => Backend::PulseAudio,
             "ALSA" => Backend::Alsa,
             "JACK" => Backend::Jack,
