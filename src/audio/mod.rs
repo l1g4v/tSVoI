@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2023 tSVoI
 // SPDX-License-Identifier: GPL-3.0-only
 
-use miniaudio::{Backend, Context, DeviceId, DeviceIdAndName};
+use miniaudio::{Backend, Context, DeviceId};
 
 pub mod capture;
 pub mod playback;

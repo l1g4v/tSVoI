@@ -1,23 +1,17 @@
 // SPDX-FileCopyrightText: Copyright 2023 tSVoI
 // SPDX-License-Identifier: GPL-3.0-only
 
-use bincode::de;
 use bytes::{BufMut, Bytes, BytesMut};
-use log::{debug, error, info, warn};
-use serde::de::Error;
-
-use crate::aes::AES;
-use crate::audio::playback::{self, AudioPlayback};
-use crate::audio::{self, Audio};
-use crate::audio_peer::AudioPeer;
-use crate::signaling;
-
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::net::TcpStream;
 use std::sync::{Arc, Mutex};
 use std::thread;
+
+use crate::aes::AES;
+use crate::audio_peer::AudioPeer;
+use crate::signaling;
 
 pub struct SignalingServer {
     username: String,
@@ -60,7 +54,7 @@ impl SignalingServer {
             let audio_peers = audio_peers.clone();
             let streams = streams.clone();
             let my_username = my_username.clone();
-            println!("{{ \"notification_code\": 1 }}");
+            println!("{{ \"event_code\": 1 }}");
             loop {
                 let audio_peers = audio_peers.clone();
                 let streams = streams.clone();
@@ -78,7 +72,7 @@ impl SignalingServer {
                 let welcome_prim = vec![0, id];
                 let welcome_msg = Bytes::from(welcome_prim);
                 let encrypted_msg = aes.encrypt(welcome_msg).unwrap();
-                stream.write_all(&encrypted_msg);
+                let _ = stream.write_all(&encrypted_msg);
                 streams
                     .lock()
                     .unwrap()
@@ -144,7 +138,10 @@ impl SignalingServer {
                                                     unlocked_peers.get(&from_id).unwrap();
                                                 audio_peer
                                                     .connect(ip_candidate, playback_name.clone());
-                                                info!("Connected to peer \"{}\"", String::from_utf8(usr.to_vec()).unwrap());
+                                                info!(
+                                                    "Connected to peer \"{}\"",
+                                                    String::from_utf8(usr.to_vec()).unwrap()
+                                                );
                                                 drop(unlocked_peers);
                                                 loop {
                                                     thread::sleep(
@@ -161,8 +158,9 @@ impl SignalingServer {
                                             reply.put(my_addr_candidate.as_bytes());
                                             reply.put(my_username.as_bytes());
 
-                                            let encrypted = aes_clone.encrypt(reply.freeze()).unwrap();
-                                            stream.write_all(&encrypted);
+                                            let encrypted =
+                                                aes_clone.encrypt(reply.freeze()).unwrap();
+                                            let _ = stream.write_all(&encrypted);
                                         }
                                         2 => {
                                             error!("Received unexpected opcode 2");
@@ -184,7 +182,7 @@ impl SignalingServer {
                                         continue;
                                     }
                                     let stream = stream.unwrap();
-                                    stream.write_all(&recv_buffer[..recv_len]);
+                                    let _ = stream.write_all(&recv_buffer[..recv_len]);
                                 }
                             }
                             Err(e) => {
@@ -200,7 +198,7 @@ impl SignalingServer {
     pub fn send_opus(&self, opus_packet: Bytes) {
         let peers = self.audio_peers.lock().unwrap();
         for (_, peer) in peers.values() {
-            peer.send(opus_packet.clone());
+            let _ = peer.send(opus_packet.clone());
         }
     }
     pub fn get_peers(&self) -> Vec<(u8, String)> {
@@ -211,6 +209,12 @@ impl SignalingServer {
             result.push((*id, username));
         });
         result
+    }
+    pub fn change_playback(&self, device_name: String, channels: u32, sample_rate: u32) {
+        let peers = self.audio_peers.lock().unwrap();
+        for (_, peer) in peers.values() {
+            peer.change_device(device_name.clone(), channels, sample_rate);
+        }
     }
     pub fn change_peer_volume(&self, peer_id: u8, volume: u8) {
         let peers = self.audio_peers.lock().unwrap();

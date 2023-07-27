@@ -1,13 +1,13 @@
 // SPDX-FileCopyrightText: Copyright 2023 tSVoI
 // SPDX-License-Identifier: GPL-3.0-only
 
-use bytes::{BufMut, Bytes, BytesMut};
+use bytes::{Bytes, BytesMut};
 use flume::{Receiver, Sender};
-use std::sync::{atomic::AtomicI8, Arc, Condvar, Mutex};
+use std::sync::{atomic::AtomicI8, Arc, Mutex};
 
 use crate::audio::Audio;
 use crate::audio::DeviceKind;
-use miniaudio::{Device, DeviceConfig, DeviceId, DeviceType, Format, ShareMode};
+use miniaudio::{Device, DeviceConfig, DeviceType, Format, ShareMode};
 use opus::{Application, Bitrate, Channels, Encoder};
 
 pub struct AudioCapture {
@@ -140,15 +140,9 @@ impl AudioCapture {
             .unwrap();
     }
 
-    pub fn change_device(&mut self, device_id: DeviceId, channels: u32, sample_rate: u32) {
+    pub fn change_device(&mut self, device_name: String, channels: u32, sample_rate: u32) {
         self.stop();
-        let mut config = DeviceConfig::new(DeviceType::Capture);
-        config.capture_mut().set_format(Format::S16);
-        config.capture_mut().set_channels(channels);
-        config.capture_mut().set_share_mode(ShareMode::Shared);
-        config.capture_mut().set_device_id(Some(device_id));
-        config.set_sample_rate(sample_rate);
-        config.set_period_size_in_milliseconds(10);
+        let config = Self::create_config(device_name, channels, sample_rate);
 
         let intensity_tx = self.intensity_tx.clone();
         let threshold = self.threshold.clone();

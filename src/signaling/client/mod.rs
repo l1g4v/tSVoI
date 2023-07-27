@@ -1,20 +1,14 @@
 // SPDX-FileCopyrightText: Copyright 2023 tSVoI
 // SPDX-License-Identifier: GPL-3.0-only
-
 use bytes::{BufMut, Bytes, BytesMut};
-use log::{debug, error, info, warn};
-
 use std::collections::HashMap;
 use std::io::{Read, Write};
-use std::net::TcpListener;
-use std::net::{SocketAddr, TcpStream};
+use std::net::TcpStream;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
 use crate::aes::AES;
-use crate::audio::playback::AudioPlayback;
-use crate::audio::{playback, Audio};
-use crate::audio_peer::{self, AudioPeer};
+use crate::audio_peer::AudioPeer;
 use crate::signaling;
 
 pub struct SignalingClient {
@@ -89,7 +83,6 @@ impl SignalingClient {
             unlocked_peers.insert(i, ("tbd".into(), audio_peer));
         }
         drop(unlocked_peers);
-        let my_id = self.id;
         let aes_clone = self.cipher.clone();
         let my_username = self.username.clone();
         let playback_name = playback_name.clone();
@@ -98,7 +91,7 @@ impl SignalingClient {
             let recv_buffer = &mut [0u8; 1024];
             let audio_peers = audio_peers.clone();
             let playback_name = playback_name.clone();
-            println!("{{ \"notification_code\": 1 }}");
+            println!("{{ \"event_code\": 1 }}");
             loop {
                 let audio_peers = audio_peers.clone();
                 let playback_name = playback_name.clone();
@@ -143,7 +136,10 @@ impl SignalingClient {
                                     let unlocked_peers = audio_peers.lock().unwrap();
                                     let (usr, audio_peer) = unlocked_peers.get(&from_id).unwrap();
                                     audio_peer.connect(ip_candidate, playback_name.clone());
-                                    info!("Connected to peer {}", String::from_utf8(usr.to_vec()).unwrap());
+                                    info!(
+                                        "Connected to peer {}",
+                                        String::from_utf8(usr.to_vec()).unwrap()
+                                    );
                                     drop(unlocked_peers);
                                     loop {
                                         thread::sleep(std::time::Duration::from_millis(100));
@@ -159,7 +155,7 @@ impl SignalingClient {
                                 reply.put(my_username.as_bytes());
 
                                 let encrypted = aes_clone.encrypt(reply).unwrap();
-                                stream.write_all(&encrypted);
+                                let _ = stream.write_all(&encrypted);
                             }
                             2 => {
                                 let payload = decrypted[3..].to_vec();
@@ -176,7 +172,10 @@ impl SignalingClient {
                                     let unlocked_peers = audio_peers.lock().unwrap();
                                     let (usr, audio_peer) = unlocked_peers.get(&from_id).unwrap();
                                     audio_peer.connect(ip_candidate, playback_name.clone());
-                                    info!("Connected to peer {}", String::from_utf8(usr.to_vec()).unwrap());
+                                    info!(
+                                        "Connected to peer {}",
+                                        String::from_utf8(usr.to_vec()).unwrap()
+                                    );
                                     drop(unlocked_peers);
                                     loop {
                                         thread::sleep(std::time::Duration::from_millis(100));
@@ -208,7 +207,7 @@ impl SignalingClient {
         }
         let peers = trylock.unwrap();
         for (_, peer) in peers.values() {
-            peer.send(opus_packet.clone());
+            let _ = peer.send(opus_packet.clone());
         }
     }
 
@@ -219,6 +218,13 @@ impl SignalingClient {
             result.push((*id, username.clone()));
         });
         result
+    }
+
+    pub fn change_playback(&self, device_name: String, channels: u32, sample_rate: u32) {
+        let peers = self.audio_peers.lock().unwrap();
+        for (_, peer) in peers.values() {
+            peer.change_device(device_name.clone(), channels, sample_rate);
+        }
     }
 
     pub fn change_peer_volume(&self, peer_id: u8, volume: u8) {

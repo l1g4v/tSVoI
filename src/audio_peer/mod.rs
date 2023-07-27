@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 
 use bytes::{BufMut, Bytes, BytesMut};
-use flume::{Receiver, Sender};
 use std::{
+    cmp::Reverse,
+    collections::BinaryHeap,
     sync::{
         atomic::{AtomicBool, AtomicI8, AtomicU64, Ordering},
         Arc, Mutex,
@@ -11,11 +12,8 @@ use std::{
     thread,
 };
 
-use crate::audio::{playback::AudioPlayback, Audio};
-use std::cmp::Reverse;
-use std::collections::BinaryHeap;
-
 use crate::aes::AES;
+use crate::audio::playback::AudioPlayback;
 
 pub struct AudioPeer {
     ready: Arc<AtomicBool>,
@@ -23,6 +21,7 @@ pub struct AudioPeer {
     volume: Arc<AtomicI8>,
     udpsocket: Arc<Mutex<std::net::UdpSocket>>,
     aes: AES,
+    device: Arc<Mutex<Option<AudioPlayback>>>,
 }
 impl AudioPeer {
     /// Creates a new AudioPeer
@@ -39,6 +38,7 @@ impl AudioPeer {
                 std::net::UdpSocket::bind(bind).expect("couldn't bind to address"),
             )),
             aes: AES::new(Some(&key)).unwrap(),
+            device: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -60,7 +60,7 @@ impl AudioPeer {
         let playback_config = AudioPlayback::create_config(playback_name, 2, 48_000);
         let audio_playback = AudioPlayback::new(playback_config);
         let ready = self.ready.clone();
-
+        let device = self.device.clone();
         //Avoids a weird bug where the cpu usage grows when one of the two peers never receives a packet
         udp_socket.send(&[1]).unwrap();
         thread::spawn(move || {
@@ -68,6 +68,8 @@ impl AudioPeer {
             let mut recv_buffer = BytesMut::zeroed(1024);
             let mut audio_buffer: BinaryHeap<Reverse<(u64, Bytes)>> = BinaryHeap::new();
             let playback_tx = audio_playback.get_playback_tx();
+
+            *device.lock().unwrap() = Some(audio_playback);
             loop {
                 match udp_socket.recv(recv_buffer.as_mut()) {
                     Ok(n) => {
@@ -139,7 +141,11 @@ impl AudioPeer {
 
         self.udpsocket.lock().unwrap().send(&encrypted)
     }
-
+    pub fn change_device(&self, device_name: String, channels: u32, sample_rate: u32) {
+        let mut unlock = self.device.lock();
+        let playback = unlock.as_mut().unwrap().as_mut().unwrap();
+        playback.change_device(device_name, channels, sample_rate);
+    }
     pub fn change_volume(&self, volume: u8) {
         self.volume.store(volume as i8, Ordering::Relaxed);
     }
