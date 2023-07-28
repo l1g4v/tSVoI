@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::net::TcpStream;
+use std::sync::atomic::AtomicU8;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
@@ -19,6 +20,7 @@ pub struct SignalingServer {
     cipher: Arc<AES>,
     streams: Arc<Mutex<HashMap<u8, TcpStream>>>,
     audio_peers: Arc<Mutex<HashMap<u8, (Bytes, AudioPeer)>>>,
+    index_counter: Arc<AtomicU8>,
 }
 impl SignalingServer {
     pub fn new(username: String) -> Self {
@@ -32,6 +34,7 @@ impl SignalingServer {
             cipher,
             streams: Arc::new(Mutex::new(HashMap::new())),
             audio_peers: Arc::new(Mutex::new(HashMap::new())),
+            index_counter: Arc::new(AtomicU8::new(1)),
         }
     }
     pub fn get_listen_address(&self) -> String {
@@ -50,6 +53,7 @@ impl SignalingServer {
         let streams = self.streams.clone();
         let aes = self.cipher.clone();
         let my_username = self.username.clone();
+        let index_counter = self.index_counter.clone();
         thread::spawn(move || {
             let audio_peers = audio_peers.clone();
             let streams = streams.clone();
@@ -68,7 +72,7 @@ impl SignalingServer {
                 let (mut stream, addr) = try_accept.unwrap();
                 debug!("New connection from {}", addr);
 
-                let id = 1 + audio_peers.lock().unwrap().len() as u8;
+                let id = index_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 let welcome_prim = vec![0, id];
                 let welcome_msg = Bytes::from(welcome_prim);
                 let encrypted_msg = aes.encrypt(welcome_msg).unwrap();
@@ -84,14 +88,27 @@ impl SignalingServer {
                 thread::spawn(move || {
                     let recv_buffer = &mut [0u8; 1024];
                     let playback_name = playback_name.clone();
-
+                    let streams = streams.clone();
                     loop {
                         let audio_peers = audio_peers.clone();
                         let playback_name = playback_name.clone();
                         match stream.read(recv_buffer.as_mut()) {
                             Ok(recv_len) => {
                                 if recv_len == 0 {
-                                    error!("Connection closed");
+                                    debug!("Connection closed");
+                                    streams.lock().unwrap().remove(&id);
+                                    audio_peers.lock().unwrap().remove(&id);
+                                    println!("{{ \"event_code\": 3, \"id\": {} }}", id);
+                                    streams.lock().unwrap().iter().for_each(|(sid, stream)| {
+                                        let mut reply = BytesMut::with_capacity(1024);
+                                        reply.put_u8(4);
+                                        reply.put_u8(0);
+                                        reply.put_u8(*sid);
+                                        reply.put_u8(id);
+                                        let encrypted_reply = aes_clone.encrypt(reply.freeze()).unwrap();
+                                        let _ = stream.try_clone().as_mut().unwrap().write_all(&encrypted_reply);
+                                    });
+
                                     return;
                                 }
                                 let try_decrypt =
@@ -136,18 +153,9 @@ impl SignalingServer {
                                                 let unlocked_peers = audio_peers.lock().unwrap();
                                                 let (usr, audio_peer) =
                                                     unlocked_peers.get(&from_id).unwrap();
-                                                audio_peer
-                                                    .connect(ip_candidate, playback_name.clone());
-                                                info!(
-                                                    "Connected to peer \"{}\"",
-                                                    String::from_utf8(usr.to_vec()).unwrap()
-                                                );
-                                                drop(unlocked_peers);
-                                                loop {
-                                                    thread::sleep(
-                                                        std::time::Duration::from_millis(100),
-                                                    );
-                                                }
+                                                let username = String::from_utf8(usr.to_vec()).unwrap();
+                                                println!("{{ \"event_code\": 2, \"id\": {}, \"username\": \"{}\" }}", from_id, username);
+                                                audio_peer.connect(ip_candidate, playback_name.clone());
                                             });
 
                                             let mut reply = BytesMut::with_capacity(1024);
@@ -178,7 +186,7 @@ impl SignalingServer {
                                     let mut streams = streams.lock().unwrap();
                                     let stream = streams.get_mut(&to_id);
                                     if stream.is_none() {
-                                        error!("Stream {} not found", to_id);
+                                        debug!("Stream {} not found", to_id);
                                         continue;
                                     }
                                     let stream = stream.unwrap();
@@ -186,7 +194,19 @@ impl SignalingServer {
                                 }
                             }
                             Err(e) => {
-                                error!("Failed to read from stream: {}", e);
+                                debug!("Connection closed");
+                                streams.lock().unwrap().remove(&id);
+                                audio_peers.lock().unwrap().remove(&id);
+                                println!("{{ \"event_code\": 3, \"id\": {} }}", id);
+                                streams.lock().unwrap().iter().for_each(|(sid, stream)| {
+                                    let mut reply = BytesMut::with_capacity(1024);
+                                    reply.put_u8(4);
+                                    reply.put_u8(0);
+                                    reply.put_u8(*sid);
+                                    reply.put_u8(id);
+                                    let encrypted_reply = aes_clone.encrypt(reply.freeze()).unwrap();
+                                    let _ = stream.try_clone().as_mut().unwrap().write_all(&encrypted_reply);
+                                });
                                 return;
                             }
                         }

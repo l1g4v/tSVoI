@@ -57,6 +57,9 @@ impl AES {
     }
 
     pub fn decrypt(&self, bytes: Bytes) -> Result<Bytes, Error> {
+        if bytes.len() < 12 {
+            return Err(Error);
+        }
         let nonce = &bytes[0..12];
         let ciphertext = &bytes[12..];
         let decrypted = self.cipher.decrypt(&Nonce::from_slice(nonce), ciphertext)?;
@@ -65,6 +68,9 @@ impl AES {
     }
 
     pub fn decrypt_vec(&self, bytes: Vec<u8>) -> Result<Vec<u8>, Error> {
+        if bytes.len() < 12 {
+            return Err(Error);
+        }
         let nonce = &bytes[0..12];
         let ciphertext = &bytes[12..];
 

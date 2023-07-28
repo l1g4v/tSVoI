@@ -98,7 +98,8 @@ impl SignalingClient {
                 match stream.read(recv_buffer) {
                     Ok(recv_len) => {
                         if recv_len == 0 {
-                            error!("Connection closed");
+                            debug!("Connection closed");
+                            println!("{{ \"event_code\": 3  \"id\": 0 }}");
                             return;
                         }
                         let try_decrypt = aes_clone.decrypt_vec(recv_buffer[..recv_len].to_vec());
@@ -136,14 +137,9 @@ impl SignalingClient {
                                     let unlocked_peers = audio_peers.lock().unwrap();
                                     let (usr, audio_peer) = unlocked_peers.get(&from_id).unwrap();
                                     audio_peer.connect(ip_candidate, playback_name.clone());
-                                    info!(
-                                        "Connected to peer {}",
-                                        String::from_utf8(usr.to_vec()).unwrap()
-                                    );
-                                    drop(unlocked_peers);
-                                    loop {
-                                        thread::sleep(std::time::Duration::from_millis(100));
-                                    }
+
+                                    let username = String::from_utf8(usr.to_vec()).unwrap();
+                                    println!("{{ \"event_code\": 2, \"id\": {}, \"username\": \"{}\" }}", from_id, username);
                                 });
 
                                 let mut reply = BytesMut::with_capacity(1024);
@@ -172,18 +168,17 @@ impl SignalingClient {
                                     let unlocked_peers = audio_peers.lock().unwrap();
                                     let (usr, audio_peer) = unlocked_peers.get(&from_id).unwrap();
                                     audio_peer.connect(ip_candidate, playback_name.clone());
-                                    info!(
-                                        "Connected to peer {}",
-                                        String::from_utf8(usr.to_vec()).unwrap()
-                                    );
-                                    drop(unlocked_peers);
-                                    loop {
-                                        thread::sleep(std::time::Duration::from_millis(100));
-                                    }
+                                    let username = String::from_utf8(usr.to_vec()).unwrap();
+                                    println!("{{ \"event_code\": 2, \"id\": {}, \"username\": \"{}\" }}", from_id, username);
                                 });
                             }
                             3 => {
                                 todo!("Change bitrate or let AudioPeer handle it");
+                            }
+                            4 => {
+                                let lost_id = decrypted[3];
+                                audio_peers.lock().unwrap().remove(&lost_id);
+                                println!("{{ \"event_code\": 3, \"id\": {} }}", lost_id);
                             }
                             _ => {
                                 error!("Unknown opcode {}", opcode);

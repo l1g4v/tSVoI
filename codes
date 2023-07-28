@@ -1,13 +1,46 @@
 signaling codes:
     format: <u8 opcode><u8 from><u8 to><data>
 
-    new connection: <0><u8 id>
-    announce:       <1><u8 sender_id><u8 to_id><u8 sender_ip_len><str sender_ip><str sender_username>
-    acknowledge:    <2><u8 sender_id><u8 to_id><u8 sender_ip_len><str sender_ip>str sender_username>
-    bitrate change: <3><u8 sender_id><u8 to_id><u32 new bitrate>
+    new connection  <0><u8 id>
+    announce        <1><u8 sender_id><u8 to_id><u8 sender_ip_len><str sender_ip><str sender_username>
+    acknowledge     <2><u8 sender_id><u8 to_id><u8 sender_ip_len><str sender_ip>str sender_username>
+    bitrate change  <3><u8 sender_id><u8 to_id><u32 new bitrate>
+    peer disconnect <4><u8 sender_id><u8 to_id><u8 lost_id>
 
 
-app codes¿ñ¿: 
+event codes: 
     0: new server created
-    1: signaling server is running
-    2: signaling client is running
+    1: signaling running
+    2: new peer connection
+    3: peer connection dropped
+
+operation codes for stdin (very important to send them as a single line json since the program will read each line as a new argument)
+op_code 0:
+	Change input device
+	  {  
+	      "op_code": 0,  
+	      "device": "<input device name>"  
+	      "channels": <n channels uint>  
+	      "sample_rate": <sample rate uint>  
+	  }  
+op_code 1:
+	Change output device
+	  {  
+	      "op_code": 1,  
+	      "device": "<output device name>"  
+	      "channels": <n channels uint>  
+	      "sample_rate": <sample rate uint>  
+	  }  
+op_code 2:
+	Change peer volume
+	  {  
+	      "op_code": 2,  
+	      "peer_id": <peer id uint>  
+	      "volume": <volume uint>  
+	  }  
+op_code 3:
+	Change encoder bitrate
+	  {  
+	      "op_code": 3,  
+	      "bitrate": <bitrate uint>  
+	  }

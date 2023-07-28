@@ -84,9 +84,11 @@ impl AudioPeer {
                         }
 
                         //Decrypt packet
-                        let decrypted = aes
-                            .decrypt(bytes::Bytes::copy_from_slice(&recv_buffer[..n]))
-                            .unwrap();
+                        let try_decrypt = aes.decrypt(bytes::Bytes::copy_from_slice(&recv_buffer[..n]));
+                        if try_decrypt.is_err() {
+                            continue;
+                        }
+                        let decrypted = try_decrypt.unwrap();
                         let dec_len = decrypted.len();
 
                         //Get packet count
@@ -103,7 +105,8 @@ impl AudioPeer {
                         audio_buffer.push(Reverse(voice));
                     }
                     Err(e) => {
-                        error!("Error: {}", e);
+                        return;
+                        //error!("Error: {}", e);
                     }
                 }
                 // "jitter buffer¿¿¿¿¿ (Ñ)"
