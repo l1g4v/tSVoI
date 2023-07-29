@@ -10,6 +10,7 @@ use std::thread;
 use crate::aes::AES;
 use crate::audio_peer::AudioPeer;
 use crate::signaling;
+use crate::spawn_thread;
 
 pub struct SignalingClient {
     id: u8,
@@ -87,7 +88,7 @@ impl SignalingClient {
         let my_username = self.username.clone();
         let playback_name = playback_name.clone();
         let my_id = self.id;
-        thread::spawn(move || {
+        spawn_thread!("client tpc signaling", move || {
             let recv_buffer = &mut [0u8; 1024];
             let audio_peers = audio_peers.clone();
             let playback_name = playback_name.clone();
@@ -133,7 +134,7 @@ impl SignalingClient {
                                     .unwrap()
                                     .insert(from_id, (username, audio_peer));
 
-                                thread::spawn(move || {
+                                spawn_thread!("p2p audio", move || {
                                     let unlocked_peers = audio_peers.lock().unwrap();
                                     let (usr, audio_peer) = unlocked_peers.get(&from_id).unwrap();
                                     audio_peer.connect(ip_candidate, playback_name.clone());
@@ -164,7 +165,7 @@ impl SignalingClient {
                                 *usr = username;
                                 drop(unlocked_peers);
 
-                                thread::spawn(move || {
+                                spawn_thread!("p2p audio", move || {
                                     let unlocked_peers = audio_peers.lock().unwrap();
                                     let (usr, audio_peer) = unlocked_peers.get(&from_id).unwrap();
                                     audio_peer.connect(ip_candidate, playback_name.clone());

@@ -13,6 +13,7 @@ use opus::{Channels, Decoder};
 
 use crate::audio::Audio;
 use crate::audio::DeviceKind;
+use crate::spawn_thread;
 
 pub struct AudioPlayback {
     playback_device: Device,
@@ -27,14 +28,14 @@ impl AudioPlayback {
     /// * `channels` - The number of channels to use
     /// * `sample_rate` - The sample rate to use
     pub fn create_config(device_name: String, channels: u32, sample_rate: u32) -> DeviceConfig {
-        let device_id = Audio::get_device_id(&device_name, DeviceKind::Playback).unwrap();
+        let device_id = Audio::get_device_id(&device_name, DeviceKind::Playback);
         let mut config = DeviceConfig::new(DeviceType::Playback);
         config.playback_mut().set_format(Format::S16);
         config.playback_mut().set_channels(channels);
         config.playback_mut().set_share_mode(ShareMode::Shared);
-        config.playback_mut().set_device_id(Some(device_id));
+        config.playback_mut().set_device_id(device_id);
         config.set_sample_rate(sample_rate);
-        config.set_period_size_in_milliseconds(10);
+        //config.set_period_size_in_milliseconds(10);
         //config.set_period_size_in_frames(1200);
         config
     }
@@ -95,7 +96,7 @@ impl AudioPlayback {
         let playback_arc = self.playback_arc.clone();
         let playback_rx = self.playback_rx.clone();
 
-        thread::spawn(move || loop {
+        spawn_thread!("playback device playstream listener", move || loop {
             if let Ok(payload) = playback_rx.recv_timeout(std::time::Duration::from_millis(9)) {
                 if payload.len() == 1 {
                     if payload[0] == 0 {

@@ -14,6 +14,7 @@ use std::{
 
 use crate::aes::AES;
 use crate::audio::playback::AudioPlayback;
+use crate::spawn_thread;
 
 pub struct AudioPeer {
     ready: Arc<AtomicBool>,
@@ -63,7 +64,7 @@ impl AudioPeer {
         let device = self.device.clone();
         //Avoids a weird bug where the cpu usage grows when one of the two peers never receives a packet
         udp_socket.send(&[1]).unwrap();
-        thread::spawn(move || {
+        spawn_thread!("AudioPeer udp", move || {
             audio_playback.start();
             let mut recv_buffer = BytesMut::zeroed(1024);
             let mut audio_buffer: BinaryHeap<Reverse<(u64, Bytes)>> = BinaryHeap::new();

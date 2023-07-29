@@ -13,6 +13,7 @@ use std::thread;
 use crate::aes::AES;
 use crate::audio_peer::AudioPeer;
 use crate::signaling;
+use crate::spawn_thread;
 
 pub struct SignalingServer {
     username: String,
@@ -54,7 +55,7 @@ impl SignalingServer {
         let aes = self.cipher.clone();
         let my_username = self.username.clone();
         let index_counter = self.index_counter.clone();
-        thread::spawn(move || {
+        spawn_thread!("server tpc listener", move || {
             let audio_peers = audio_peers.clone();
             let streams = streams.clone();
             let my_username = my_username.clone();
@@ -85,7 +86,7 @@ impl SignalingServer {
                 let aes_clone = aes.clone();
 
                 let playback_name = playback_name.clone();
-                thread::spawn(move || {
+                spawn_thread!(format!("server tcp stream signaling n_{id}"), move || {
                     let recv_buffer = &mut [0u8; 1024];
                     let playback_name = playback_name.clone();
                     let streams = streams.clone();
@@ -149,7 +150,7 @@ impl SignalingServer {
                                                 .unwrap()
                                                 .insert(from_id, (username, audio_peer));
 
-                                            thread::spawn(move || {
+                                            spawn_thread!("p2p audio", move || {
                                                 let unlocked_peers = audio_peers.lock().unwrap();
                                                 let (usr, audio_peer) =
                                                     unlocked_peers.get(&from_id).unwrap();

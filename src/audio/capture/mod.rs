@@ -26,14 +26,14 @@ impl AudioCapture {
     /// * `channels` - The number of channels to use
     /// * `sample_rate` - The sample rate to use
     pub fn create_config(device_name: String, channels: u32, sample_rate: u32) -> DeviceConfig {
-        let device_id = Audio::get_device_id(&device_name, DeviceKind::Capture).unwrap();
+        let device_id = Audio::get_device_id(&device_name, DeviceKind::Capture);
         let mut config = DeviceConfig::new(DeviceType::Capture);
         config.capture_mut().set_format(Format::S16);
         config.capture_mut().set_channels(channels);
         config.capture_mut().set_share_mode(ShareMode::Shared);
-        config.capture_mut().set_device_id(Some(device_id));
+        config.capture_mut().set_device_id(device_id);
         config.set_sample_rate(sample_rate);
-        config.set_period_size_in_milliseconds(10);
+        //config.set_period_size_in_milliseconds(10);
         config
     }
 
@@ -93,7 +93,7 @@ impl AudioCapture {
                     encoder_clone
                         .lock()
                         .unwrap()
-                        .encode_vec(input_samples, num_samples)
+                        .encode_vec(input_samples, 512)
                         .unwrap(),
                 );
                 capture_tx_clone.send(encoded).unwrap();
