@@ -839,7 +839,7 @@ dependencies = [
 
 [[package]]
 name = "tSVoI"
-version = "0.0.9"
+version = "0.0.10"
 dependencies = [
  "aead",
  "aes-gcm-siv",

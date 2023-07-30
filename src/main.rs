@@ -75,7 +75,7 @@ fn main() {
             let username = args[1].clone();
             let input_device_name = args[2].clone();
             let output_device_name = args[3].clone();
-            let capture_device_config = AudioCapture::create_config(input_device_name, 2, 48_000);
+            let capture_device_config = AudioCapture::create_config(input_device_name, 1, 48_000);
             let mut capture = AudioCapture::new(capture_device_config, 96_000, 0);
             let capture_rx = capture.get_capture_rx();
             capture.start();
@@ -118,7 +118,7 @@ fn main() {
             let server_key = args[3].clone();
             let input_device_name = args[4].clone();
             let output_device_name = args[5].clone();
-            let capture_device_config = AudioCapture::create_config(input_device_name, 2, 48_000);
+            let capture_device_config = AudioCapture::create_config(input_device_name, 1, 48_000);
             let mut capture = AudioCapture::new(capture_device_config, 96_000, 0);
             let capture_rx = capture.get_capture_rx();
             capture.start();

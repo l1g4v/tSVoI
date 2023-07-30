@@ -36,7 +36,6 @@ impl AudioPlayback {
         config.playback_mut().set_device_id(device_id);
         config.set_sample_rate(sample_rate);
         //config.set_period_size_in_milliseconds(10);
-        //config.set_period_size_in_frames(1200);
         config
     }
 
@@ -59,7 +58,7 @@ impl AudioPlayback {
         playback_device.set_data_callback(move |_, output, _| {
             let mut queue = playback_clone.lock().unwrap();
             let samples_len = output.as_samples_mut::<i16>().len();
-            let decoded_buf = &mut [0; 2048];
+            let decoded_buf = &mut [0; 1024];
 
             if queue.len() > 1 {
                 //Decode opus packet
