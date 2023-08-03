@@ -11,6 +11,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 use crate::aes::AES;
+use crate::audio::playback;
 use crate::audio_peer::AudioPeer;
 use crate::signaling;
 use crate::spawn_thread;
@@ -20,7 +21,7 @@ pub struct SignalingServer {
     listener: TcpListener,
     cipher: Arc<AES>,
     streams: Arc<Mutex<HashMap<u8, TcpStream>>>,
-    audio_peers: Arc<Mutex<HashMap<u8, (Bytes, AudioPeer)>>>,
+    audio_peers: Arc<Mutex<HashMap<u8, AudioPeer>>>,
     index_counter: Arc<AtomicU8>,
 }
 impl SignalingServer {
@@ -84,15 +85,12 @@ impl SignalingServer {
                     .insert(id, stream.try_clone().unwrap());
 
                 let aes_clone = aes.clone();
-
                 let playback_name = playback_name.clone();
                 spawn_thread!(format!("server tcp stream signaling n_{id}"), move || {
                     let recv_buffer = &mut [0u8; 1024];
-                    let playback_name = playback_name.clone();
                     let streams = streams.clone();
                     loop {
                         let audio_peers = audio_peers.clone();
-                        let playback_name = playback_name.clone();
                         match stream.read(recv_buffer.as_mut()) {
                             Ok(recv_len) => {
                                 if recv_len == 0 {
@@ -124,8 +122,6 @@ impl SignalingServer {
 
                                 let decrypted = try_decrypt.unwrap();
                                 debug!("Received message: {:?}", decrypted);
-                                //let mut payload = Vec::new();
-                                //decrypted[2..].clone_into(&mut payload);
                                 let to_id = decrypted[2];
                                 if to_id == 0 {
                                     let opcode = decrypted[0];
@@ -135,11 +131,9 @@ impl SignalingServer {
                                         1 => {
                                             let payload = decrypted[3..].to_vec();
                                             let ip_len = 1 + payload[0] as usize;
-                                            let ip_candidate =
-                                                String::from_utf8(payload[1..ip_len].to_vec())
-                                                    .unwrap();
+                                            let ip_candidate = std::str::from_utf8(&payload[1..ip_len]).unwrap();
                                             debug!("Received ip candidate: {}", ip_candidate);
-                                            let username = Bytes::from(payload[ip_len..].to_vec());
+                                            let username = std::str::from_utf8(&payload[ip_len..]).unwrap();
                                             let my_addr_candidate = signaling::get_address_ipv6();
                                             let audio_peer = AudioPeer::new(
                                                 my_addr_candidate.clone(),
@@ -148,16 +142,12 @@ impl SignalingServer {
                                             audio_peers
                                                 .lock()
                                                 .unwrap()
-                                                .insert(from_id, (username, audio_peer));
+                                                .insert(from_id, audio_peer);
 
-                                            spawn_thread!("p2p audio", move || {
-                                                let unlocked_peers = audio_peers.lock().unwrap();
-                                                let (usr, audio_peer) =
-                                                    unlocked_peers.get(&from_id).unwrap();
-                                                let username = String::from_utf8(usr.to_vec()).unwrap();
-                                                println!("{{ \"event_code\": 2, \"id\": {}, \"username\": \"{}\" }}", from_id, username);
-                                                audio_peer.connect(ip_candidate, playback_name.clone());
-                                            });
+                                            let unlocked_peers = audio_peers.lock().unwrap();
+                                            let audio_peer = unlocked_peers.get(&from_id).unwrap();
+                                            println!("{{ \"event_code\": 2, \"id\": {}, \"username\": \"{}\" }}", from_id, username);
+                                            audio_peer.connect(ip_candidate, &playback_name);
 
                                             let mut reply = BytesMut::with_capacity(1024);
                                             reply.put_u8(2);
@@ -216,27 +206,21 @@ impl SignalingServer {
             }
         });
     }
+
     pub fn send_opus(&self, opus_packet: Bytes) {
         let peers = self.audio_peers.lock().unwrap();
-        for (_, peer) in peers.values() {
+        for peer in peers.values() {
             let _ = peer.send(opus_packet.clone());
         }
     }
-    pub fn get_peers(&self) -> Vec<(u8, String)> {
+
+    pub fn change_playback(&self, device_name: &String, channels: u32, sample_rate: u32) {
         let peers = self.audio_peers.lock().unwrap();
-        let mut result: Vec<(u8, String)> = Vec::new();
-        peers.iter().for_each(|(id, (username, _))| {
-            let username = String::from_utf8(username.to_vec()).unwrap();
-            result.push((*id, username));
-        });
-        result
-    }
-    pub fn change_playback(&self, device_name: String, channels: u32, sample_rate: u32) {
-        let peers = self.audio_peers.lock().unwrap();
-        for (_, peer) in peers.values() {
-            peer.change_device(device_name.clone(), channels, sample_rate);
+        for peer in peers.values() {
+            peer.change_device(device_name, channels, sample_rate);
         }
     }
+
     pub fn change_peer_volume(&self, peer_id: u8, volume: u8) {
         let peers = self.audio_peers.lock().unwrap();
         let peer = peers.get(&peer_id);
@@ -244,7 +228,7 @@ impl SignalingServer {
             error!("Peer {} not found", peer_id);
             return;
         }
-        let (_, peer) = peer.unwrap();
+        let peer = peer.unwrap();
         peer.change_volume(volume);
     }
 }

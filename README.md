@@ -11,7 +11,7 @@ Get your input and output devices:
 - Run ```./tSVoI 3```
 
 Host the signaling server:
-- Run the app with these arguments: ```./tSVoI 0 "<your username> <capture device name> <playback device name>```
+- Run the app with these arguments: ```./tSVoI 0 "<your username> <capture device name or '_' for default device> <playback device name>```
 - The output will show something like this: ```{ "event_code": 0, "server_address": "<ipv6 address>", "server_key": "<base64 string>" }```
 
 Connect to a signaling server:

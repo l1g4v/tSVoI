@@ -64,7 +64,6 @@ fn main() {
         }
     });
 
-    //dbg!(args);
     //args: <0 or 1 for server or client>
     //server: <username> <input device name> <output device name>
     //client: <username> <server address> <server key> <input device name> <output device name>
@@ -76,7 +75,7 @@ fn main() {
             let input_device_name = args[2].clone();
             let output_device_name = args[3].clone();
             let capture_device_config = AudioCapture::create_config(input_device_name, 1, 48_000);
-            let mut capture = AudioCapture::new(capture_device_config, 96_000, 0);
+            let mut capture = AudioCapture::new(capture_device_config, 64_000, 0);
             let capture_rx = capture.get_capture_rx();
             capture.start();
 
@@ -94,7 +93,7 @@ fn main() {
                             capture.change_device(data.5.unwrap(), data.1 as u32, data.3 as u32);
                         }
                         1 => {
-                            server.change_playback(data.5.unwrap(), data.1 as u32, data.2 as u32);
+                            server.change_playback(&data.5.unwrap(), data.1 as u32, data.2 as u32);
                         }
                         2 => {
                             server.change_peer_volume(data.1, data.2);
@@ -105,7 +104,7 @@ fn main() {
                         _ => {}
                     }
                 }
-                if let Ok(data) = capture_rx.recv_timeout(std::time::Duration::from_millis(9)) {
+                if let Ok(data) = capture_rx.recv() {
                     server.send_opus(data);
                 }
                 thread::sleep(std::time::Duration::from_millis(1));
@@ -119,7 +118,7 @@ fn main() {
             let input_device_name = args[4].clone();
             let output_device_name = args[5].clone();
             let capture_device_config = AudioCapture::create_config(input_device_name, 1, 48_000);
-            let mut capture = AudioCapture::new(capture_device_config, 96_000, 0);
+            let mut capture = AudioCapture::new(capture_device_config, 64_000, 0);
             let capture_rx = capture.get_capture_rx();
             capture.start();
 
@@ -132,7 +131,7 @@ fn main() {
                             capture.change_device(data.5.unwrap(), data.1 as u32, data.3 as u32);
                         }
                         1 => {
-                            client.change_playback(data.5.unwrap(), data.1 as u32, data.2 as u32);
+                            client.change_playback(&data.5.unwrap(), data.1 as u32, data.2 as u32);
                         }
                         2 => {
                             client.change_peer_volume(data.1, data.2);

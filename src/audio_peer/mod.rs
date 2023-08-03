@@ -48,7 +48,7 @@ impl AudioPeer {
     /// # Arguments
     /// * `addr` - The address to connect to
     /// * `playback_name` - The name of the playback device
-    pub fn connect(&self, addr: String, playback_name: String) {
+    pub fn connect(&self, addr: &str, playback_name: &String) {
         debug!("Connecting to {}", addr);
         self.udpsocket
             .lock()
@@ -66,7 +66,7 @@ impl AudioPeer {
         udp_socket.send(&[1]).unwrap();
         spawn_thread!("AudioPeer udp", move || {
             audio_playback.start();
-            let mut recv_buffer = BytesMut::zeroed(1024);
+            let recv_buffer = &mut [0u8; 1024];
             let mut audio_buffer: BinaryHeap<Reverse<(u64, Bytes)>> = BinaryHeap::new();
             let playback_tx = audio_playback.get_playback_tx();
 
@@ -105,15 +105,15 @@ impl AudioPeer {
                         let voice = (recv_packet_count, opus.freeze());
                         audio_buffer.push(Reverse(voice));
                     }
-                    Err(e) => {
+                    Err(_) => {
                         return;
                         //error!("Error: {}", e);
                     }
                 }
                 // "jitter buffer¿¿¿¿¿ (Ñ)"
-                if audio_buffer.len() > 1 {
+                if audio_buffer.len() > 0 {
                     while !audio_buffer.is_empty() {
-                        let payload = audio_buffer.pop().unwrap().0 .1;
+                        let payload = audio_buffer.pop().unwrap().0.1;
                         playback_tx.send(payload).unwrap();
                     }
                 }
@@ -145,7 +145,7 @@ impl AudioPeer {
 
         self.udpsocket.lock().unwrap().send(&encrypted)
     }
-    pub fn change_device(&self, device_name: String, channels: u32, sample_rate: u32) {
+    pub fn change_device(&self, device_name: &String, channels: u32, sample_rate: u32) {
         let mut unlock = self.device.lock();
         let playback = unlock.as_mut().unwrap().as_mut().unwrap();
         playback.change_device(device_name, channels, sample_rate);

@@ -120,9 +120,14 @@ impl AudioCapture {
         self.capture_device.stop().unwrap();
     }
 
-    /// Returns the capture arc
+    /// Returns the capture receiver
     pub fn get_capture_rx(&self) -> Receiver<Bytes> {
         self.capture_rx.clone()
+    }
+
+    /// Returns the intensity receiver
+    pub fn get_intensity_rx(&self) -> Receiver<i8> {
+        self.intensity_rx.clone()
     }
 
     /// Changes the threshold

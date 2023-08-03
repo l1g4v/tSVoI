@@ -27,8 +27,8 @@ impl AudioPlayback {
     /// * `device_name` - The name of the device to use
     /// * `channels` - The number of channels to use
     /// * `sample_rate` - The sample rate to use
-    pub fn create_config(device_name: String, channels: u32, sample_rate: u32) -> DeviceConfig {
-        let device_id = Audio::get_device_id(&device_name, DeviceKind::Playback);
+    pub fn create_config(device_name: &String, channels: u32, sample_rate: u32) -> DeviceConfig {
+        let device_id = Audio::get_device_id(device_name, DeviceKind::Playback);
         let mut config = DeviceConfig::new(DeviceType::Playback);
         config.playback_mut().set_format(Format::S16);
         config.playback_mut().set_channels(channels);
@@ -96,7 +96,7 @@ impl AudioPlayback {
         let playback_rx = self.playback_rx.clone();
 
         spawn_thread!("playback device playstream listener", move || loop {
-            if let Ok(payload) = playback_rx.recv_timeout(std::time::Duration::from_millis(9)) {
+            if let Ok(payload) = playback_rx.recv() {
                 if payload.len() == 1 {
                     if payload[0] == 0 {
                         break;
@@ -118,7 +118,7 @@ impl AudioPlayback {
         self.playback_tx.clone()
     }
 
-    pub fn change_device(&mut self, device_name: String, channels: u32, sample_rate: u32) {
+    pub fn change_device(&mut self, device_name: &String, channels: u32, sample_rate: u32) {
         self.stop();
         let playback_clone = self.playback_arc.clone();
         let config = Self::create_config(device_name, channels, sample_rate);
