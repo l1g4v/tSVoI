@@ -56,6 +56,7 @@ impl AudioPeer {
             .connect(&addr)
             .expect("couldn't connect to address");
         let udp_socket = self.udpsocket.lock().unwrap().try_clone().unwrap();
+        let aes = self.aes.clone();
         let volume = self.volume.clone();
         let playback_config = AudioPlayback::create_config(playback_name, 2, 48_000);
         let audio_playback = AudioPlayback::new(playback_config);
@@ -83,14 +84,22 @@ impl AudioPeer {
                             continue;
                         }
 
+                        //Decrypt packet
+                        let try_decrypt = aes.decrypt(bytes::Bytes::copy_from_slice(&recv_buffer[..n]));
+                        if try_decrypt.is_err() {
+                            continue;
+                        }
+                        let decrypted = try_decrypt.unwrap();
+                        let dec_len = decrypted.len();
+
                         //Get packet count
                         let mut packet_count_bytes = [0u8; 8];
-                        packet_count_bytes.copy_from_slice(&recv_buffer[n - 8..n]);
+                        packet_count_bytes.copy_from_slice(&decrypted[dec_len - 8..]);
                         let recv_packet_count: u64 = u64::from_be_bytes(packet_count_bytes);
 
                         //Push voice packet to buffer
-                        let mut opus = BytesMut::with_capacity(n - 7);
-                        opus.put(&recv_buffer[..n - 8]);
+                        let mut opus = BytesMut::with_capacity(dec_len - 7);
+                        opus.put(&decrypted[..dec_len - 8]);
                         opus.put_u8(volume.load(Ordering::Relaxed) as u8);
 
                         let voice = (recv_packet_count, opus.freeze());
@@ -132,8 +141,9 @@ impl AudioPeer {
         let mut payload = BytesMut::with_capacity(data.len() + 8);
         payload.put(data);
         payload.put_u64(packet_count);
+        let encrypted = self.aes.encrypt(payload.freeze()).unwrap();
 
-        self.udpsocket.lock().unwrap().send(&payload.freeze())
+        self.udpsocket.lock().unwrap().send(&encrypted)
     }
     pub fn change_device(&self, device_name: &String, channels: u32, sample_rate: u32) {
         let mut unlock = self.device.lock();
