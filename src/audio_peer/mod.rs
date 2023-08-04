@@ -85,7 +85,7 @@ impl AudioPeer {
 
                         //Get packet count
                         let mut packet_count_bytes = [0u8; 8];
-                        packet_count_bytes.copy_from_slice(&recv_buffer[n - 8..]);
+                        packet_count_bytes.copy_from_slice(&recv_buffer[n - 8..n]);
                         let recv_packet_count: u64 = u64::from_be_bytes(packet_count_bytes);
 
                         //Push voice packet to buffer
