@@ -1,5 +1,6 @@
 name: Release
-
+env: 
+  RUSTFLAGS: -C target-feature=+aes,+ssse3 --cfg aes_compact
 permissions:
   contents: write
 
